@@ -54,9 +54,11 @@ param
 function PowerOff_Compute_Modules
 {
     Write-Output "Checking Power State of Compute Module Located at '$SrvName'" | Timestamp
-    if ($Server.powerState -eq "On") {
+    if ($Server.powerState -eq "On") 
+    {
         Write-Output "Attempting to power OFF Compute Module Located at '$SrvName'" | Timestamp
-        if (Get-HPOVServer -Name "$SrvName" | Stop-HPOVServer -Confirm:$false -Force | Wait-HPOVTaskComplete) {
+        if (-Not (Get-HPOVServer -Name "$SrvName" | Stop-HPOVServer -Confirm:$false -Force | Wait-HPOVTaskComplete))
+        {
             Write-Output "Unable to power OFF Compute Module Located at '$SrvName'. Exiting." | Timestamp
             Exit
         }
@@ -66,9 +68,11 @@ function PowerOff_Compute_Modules
     }
     
     Write-Output "Checking Power State of Compute Module Located at '$AvailableServerName'" | Timestamp
-    if ($AvailableServer.powerState -eq "On") {
+    if ($AvailableServer.powerState -eq "On") 
+    {
         Write-Output "Attempting to power OFF Compute Module Located at '$AvailableServerName'" | Timestamp
-        if (Get-HPOVServer -Name "$AvailableServerName" | Stop-HPOVServer -Confirm:$false -Force | Wait-HPOVTaskComplete) {
+        if (-Not (Get-HPOVServer -Name "$AvailableServerName" | Stop-HPOVServer -Confirm:$false -Force | Wait-HPOVTaskComplete)) 
+        {
             Write-Output "Unable to power OFF Compute Module Located at '$AvailableServerName'. Exiting." | Timestamp
             Exit
         }
@@ -81,20 +85,39 @@ function PowerOff_Compute_Modules
 
 function Unassign_Server_Profile
 {
-    Write-Output "Unassigning Server Profile '$SrvProfileName'" | Timestamp
-    Get-HPOVServerProfile -Name "$SrvProfileName" | New-HPOVServerProfileAssign -Unassigned | Wait-HPOVTaskComplete
-    Write-Output "Server Profile '$SrvProfileName' Unassigned" | Timestamp
     #
-    # Sleep for 10 seconds to allow compute module to quiesce
+    # Verify the server is not in a hardware refreshing state
     #
-    Start-Sleep 10
+    $Loop = $True
+    While ($Loop)
+    {
+        Write-Output "Checking '$SrvName' Hardware Refresh State" | Timestamp
+        if ($server.refreshState -eq "notRefreshing") 
+        {
+            Write-Output "Unassigning Server Profile '$SrvProfileName'" | Timestamp
+            if (Get-HPOVServerProfile -Name "$SrvProfileName" | New-HPOVServerProfileAssign -Unassigned -ApplianceConnection $ConnectedSessions | Wait-HPOVTaskComplete)
+            {
+                Write-Output "Unable to un-assign Server Profile '$SrvProfileName'.  Exiting." | Timestamp
+                Exit
+            } 
+            else {
+                Write-Output "Server Profile '$SrvProfileName' Successfully Un-assigned" | Timestamp
+                $Loop = $False
+            }
+        } 
+        else {
+            Write-Output "Compute Module '$SrvName is in a Refresh Cycle.  Sleeping 10 Seconds." | Timestamp
+            Start-Sleep 10
+        }
+    }
 }
 
 
 function Assign_Server_Profile
 {
     Write-Output "Assigning Server Profile '$SrvProfileName'" | Timestamp
-    if (-Not (Get-HPOVServerProfile -Name "$SrvProfileName" | New-HPOVServerProfileAssign -Server "$AvailableServerName" -ApplianceConnection $ApplianceConnection | Wait-HPOVTaskComplete)) {
+    if (-Not (Get-HPOVServerProfile -Name "$SrvProfileName" | New-HPOVServerProfileAssign -Server "$AvailableServerName" -ApplianceConnection $ApplianceConnection | Wait-HPOVTaskComplete)) 
+    {
         Write-Output "Server Profile '$SrvProfileName' Assigned" | Timestamp
     }
 }
@@ -103,7 +126,8 @@ function Assign_Server_Profile
 function Clear_Alert
 {
     Write-Output "Clearing Alert" | Timestamp
-    if (-Not (Set-HPOVAlert -InputObject $Alert -Cleared)) {
+    if (-Not (Set-HPOVAlert -InputObject $Alert -Cleared)) 
+    {
         Write-Output "Alert Cleared" | Timestamp
     }
 }
@@ -122,7 +146,8 @@ function Check_Available_Server
     Write-Output "Checking for Available Compute Module matching type '$SrvHardwareTypeName'" | Timestamp
     $Global:AvailableServer = Get-HPOVServer -NoProfile -ServerHardwareType $SrvHardwareType | Select -first 1
     
-    if ($AvailableServer) {
+    if ($AvailableServer) 
+    {
         #
         # We have identified a matching compute module with no server profile assigned.
         #
@@ -139,7 +164,8 @@ function Check_Available_Server
 function Check_Critical_Alert
 {
     $Loop = $True
-    While ($Loop) {
+    While ($Loop) 
+    {
         #
         # Loop checking for new Critical Alerts every 10 seconds
         #
@@ -162,7 +188,8 @@ function Check_Critical_Alert
         #
         # Verify the Critical Alert is associated to a compute module with an assigned Server Profile
         #
-        if ($Server.serverProfileUri) {
+        if ($Server.serverProfileUri) 
+        {
             $SrvProfile = Send-HPOVRequest -uri $Server.serverProfileUri -method GET
             $Global:SrvProfileName = $SrvProfile.name
             $Global:SrvHardware = Send-HPOVRequest -uri $Srv.serverHardwareTypeUri -method GET
@@ -175,7 +202,7 @@ function Check_Critical_Alert
         }
         else {
             Write-Host
-            Write-Output "No Server Profile associated with '$SrvName'.  Skipping." | Timestamp
+            Write-Output "No Server Profile associated with '$SrvName'.  Skipping Alert." | Timestamp
         }
     }
 }
@@ -192,7 +219,7 @@ if (-not (get-module HPOneview.300))
     Import-Module HPOneView.300
 }
 
-if (-not $ConnectedSessions) 
+if (-Not $ConnectedSessions) 
 {
 	$ApplianceConnection = Connect-HPOVMgmt -Hostname $Appliance -Username $Username -Password $Password
 
@@ -213,23 +240,8 @@ Write-Output "HPE Synergy Server Replace Tool Beginning..." | Timestamp
 Check_Critical_Alert
 Check_Available_Server
 PowerOff_Compute_Modules
-
-#
-# Clear the Alert and sleep for 1 minute to allow the
-# Server Profile to Unassign cleanly
-#
 Clear_Alert
-Write-Output "Pause for 60 seconds for server hardware to refresh" | Timestamp
-Start-Sleep 60
-
-#
-# Unassign the server profile from the compute module
-#
 Unassign_Server_Profile
-
-#
-# Assign the server profile to the replacement compute module
-#
 Assign_Server_Profile
 PowerOn_Compute_Module
 
