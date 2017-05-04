@@ -59,7 +59,7 @@ function PowerOff_Compute_Modules
         Write-Output "Attempting to power OFF Compute Module Located at '$SrvName'" | Timestamp
         if (-Not (Get-HPOVServer -Name "$SrvName" | Stop-HPOVServer -Confirm:$false -Force | Wait-HPOVTaskComplete))
         {
-            Write-Output "Unable to power OFF Compute Module Located at '$SrvName'. Exiting." | Timestamp
+            Write-Output "Unable to power OFF Compute Module Located at '$SrvName'.  Exiting." | Timestamp
             Exit
         }
     }
@@ -73,12 +73,26 @@ function PowerOff_Compute_Modules
         Write-Output "Attempting to power OFF Compute Module Located at '$AvailableServerName'" | Timestamp
         if (-Not (Get-HPOVServer -Name "$AvailableServerName" | Stop-HPOVServer -Confirm:$false -Force | Wait-HPOVTaskComplete)) 
         {
-            Write-Output "Unable to power OFF Compute Module Located at '$AvailableServerName'. Exiting." | Timestamp
+            Write-Output "Unable to power OFF Compute Module Located at '$AvailableServerName'.  Exiting." | Timestamp
             Exit
         }
     }
     else {
         Write-Output "Compute Module Located at '$AvailableServerName' is already powered OFF" | Timestamp
+    }
+}
+
+
+function PowerOn_Compute_Module
+{
+    Write-Output "Powering ON Compute Module Located at '$AvailableServerName'" | Timestamp
+    if (Get-HPOVServer -Name "$AvailableServerName" | Start-HPOVServer | Wait-HPOVTaskComplete)
+    {
+        Write-Output "Compute Module '$AvailableServerName' Powered ON" | Timestamp
+    }
+    else {
+        Write-Output "Compute Module '$AvailableServerName' Failed to Power ON.  Exiting." | Timestamp
+        Exit
     }
 }
 
@@ -92,7 +106,8 @@ function Unassign_Server_Profile
     While ($Loop)
     {
         Write-Output "Checking '$SrvName' Hardware Refresh State" | Timestamp
-        if ($server.refreshState -eq "notRefreshing") 
+        $Global:Server = Get-HPOVServer -Name $SrvName
+        if ($Server.refreshState -eq "NotRefreshing")
         {
             Write-Output "Unassigning Server Profile '$SrvProfileName'" | Timestamp
             if (Get-HPOVServerProfile -Name "$SrvProfileName" | New-HPOVServerProfileAssign -Unassigned -ApplianceConnection $ConnectedSessions | Wait-HPOVTaskComplete)
@@ -116,9 +131,13 @@ function Unassign_Server_Profile
 function Assign_Server_Profile
 {
     Write-Output "Assigning Server Profile '$SrvProfileName'" | Timestamp
-    if (-Not (Get-HPOVServerProfile -Name "$SrvProfileName" | New-HPOVServerProfileAssign -Server "$AvailableServerName" -ApplianceConnection $ApplianceConnection | Wait-HPOVTaskComplete)) 
+    if (-Not (Get-HPOVServerProfile -Name "$SrvProfileName" | New-HPOVServerProfileAssign -Server "$AvailableServerName" -ApplianceConnection $ConnectedSessions | Wait-HPOVTaskComplete))
     {
         Write-Output "Server Profile '$SrvProfileName' Assigned" | Timestamp
+    }
+    else {
+        Write-Output "Unable to Assign Server Profile '$SrvProfileName'.  Exiting." | Timestamp
+        Exit
     }
 }
 
@@ -126,18 +145,15 @@ function Assign_Server_Profile
 function Clear_Alert
 {
     Write-Output "Clearing Alert" | Timestamp
-    if (-Not (Set-HPOVAlert -InputObject $Alert -Cleared)) 
+    if (Set-HPOVAlert -InputObject $Alert -Cleared)
     {
         Write-Output "Alert Cleared" | Timestamp
+        Write-Output "Pausing for 60 seconds to allow Compute Module to Refresh" | Timestamp
+        Start-Sleep 60
+    } else {
+        Write-Output "Failed to Clear Alert.  Exiting." | Timestamp
+        Exit
     }
-}
-
-
-function PowerOn_Compute_Module
-{
-    Write-Output "Powering ON Compute Module Located at '$AvailableServerName'" | Timestamp
-    Get-HPOVServer -Name "$AvailableServerName" | Start-HPOVServer | Wait-HPOVTaskComplete
-    Write-Output "Compute Module '$AvailableServerName' Powered ON" | Timestamp
 }
 
 
